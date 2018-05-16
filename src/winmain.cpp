@@ -352,13 +352,14 @@ static DWORD WINAPI launchProgressBar(void *)
 	return 0;
 }
 
-bool downloadBinary(string urlFrom, string destTo, pair<string, int> proxyServerInfo, bool isSilentMode, pair<string, string> stoppedMessage)
+bool downloadBinary(string urlFrom, string destTo, pair<string, int> proxyServerInfo, bool isSilentMode, bool isAutoupdate, pair<string, string> stoppedMessage)
 {
 	FILE* pFile = fopen(destTo.c_str(), "wb");
 
 	//  Download the install package from indicated location
 	char errorBuffer[CURL_ERROR_SIZE] = { 0 };
 	CURLcode res = CURLE_FAILED_INIT;
+	long http_code = 0;
 	CURL* curl = curl_easy_init();
 	if (curl)
 	{
@@ -368,9 +369,16 @@ bool downloadBinary(string urlFrom, string destTo, pair<string, int> proxyServer
 		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, getDownloadData);
 		curl_easy_setopt(curl, CURLOPT_WRITEDATA, pFile);
 
-		curl_easy_setopt(curl, CURLOPT_NOPROGRESS, FALSE);
-		curl_easy_setopt(curl, CURLOPT_PROGRESSFUNCTION, setProgress);
-		curl_easy_setopt(curl, CURLOPT_PROGRESSDATA, hProgressBar);
+		if (isAutoupdate)
+		{
+			curl_easy_setopt(curl, CURLOPT_NOPROGRESS, TRUE);
+		}
+		else
+		{
+			curl_easy_setopt(curl, CURLOPT_NOPROGRESS, FALSE);
+			curl_easy_setopt(curl, CURLOPT_PROGRESSFUNCTION, setProgress);
+			curl_easy_setopt(curl, CURLOPT_PROGRESSDATA, hProgressBar);
+		}
 
 		curl_easy_setopt(curl, CURLOPT_USERAGENT, winGupUserAgent.c_str());
 		curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errorBuffer);
@@ -383,6 +391,8 @@ bool downloadBinary(string urlFrom, string destTo, pair<string, int> proxyServer
 		curl_easy_setopt(curl, CURLOPT_SSL_OPTIONS, CURLSSLOPT_ALLOW_BEAST | CURLSSLOPT_NO_REVOKE);
 
 		res = curl_easy_perform(curl);
+
+		curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
 
 		curl_easy_cleanup(curl);
 	}
@@ -402,7 +412,7 @@ bool downloadBinary(string urlFrom, string destTo, pair<string, int> proxyServer
 	fflush(pFile);
 	fclose(pFile);
 
-	return true;
+	return http_code == 200;
 }
 
 bool getUpdateInfo(string &info2get, const GupParameters& gupParams, const GupExtraOptions& proxyServer, const string& customParam, const string& version)
@@ -413,6 +423,7 @@ bool getUpdateInfo(string &info2get, const GupParameters& gupParams, const GupEx
 	// Get the update package's location
 	CURL *curl;
 	CURLcode res = CURLE_FAILED_INIT;
+	long http_code = 0;
 
 	curl = curl_easy_init();
 	if (curl)
@@ -471,6 +482,8 @@ bool getUpdateInfo(string &info2get, const GupParameters& gupParams, const GupEx
 
 		res = curl_easy_perform(curl);
 
+		curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+
 		curl_easy_cleanup(curl);
 	}
 
@@ -480,7 +493,8 @@ bool getUpdateInfo(string &info2get, const GupParameters& gupParams, const GupEx
 			::MessageBoxA(NULL, errorBuffer, "curl error", MB_OK);
 		return false;
 	}
-	return true;
+
+	return http_code == 200;
 }
 
 bool runInstaller(const string& app2runPath, const string& binWindowsClassName, const string& closeMsg, const string& closeMsgTitle)
@@ -610,43 +624,50 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpszCmdLine, int)
 		//
 
 		// Ask user if he/she want to do update
-		string updateAvailable = nativeLang.getMessageString("MSGID_UPDATEAVAILABLE");
-		if (updateAvailable == "")
-			updateAvailable = MSGID_UPDATEAVAILABLE;
-		
-		int thirdButtonCmd = gupParams.get3rdButtonCmd();
-		thirdDoUpdateDlgButtonLabel = gupParams.get3rdButtonLabel();
-
-		int dlAnswer = 0;
-		HWND hApp = ::FindWindowExA(NULL, NULL, gupParams.getClassName().c_str(), NULL);
-		bool isModal = gupParams.isMessageBoxModal();
-
-		if (!thirdButtonCmd)
-			dlAnswer = ::MessageBoxA(isModal ? hApp : NULL, updateAvailable.c_str(), gupParams.getMessageBoxTitle().c_str(), MB_YESNO);
-		else
-			dlAnswer = static_cast<int32_t>(::DialogBox(hInst, MAKEINTRESOURCE(IDD_YESNONEVERDLG), isModal ? hApp : NULL, reinterpret_cast<DLGPROC>(yesNoNeverDlgProc)));
-
-		if (dlAnswer == IDNO)
+		bool isAutoupdate = gupParams.isAutoupdate();
+		if (!isAutoupdate)
 		{
-			return 0;
-		}
-		
-		if (dlAnswer == IDCANCEL)
-		{
-			if (gupParams.getClassName() != "")
+			string updateAvailable = nativeLang.getMessageString("MSGID_UPDATEAVAILABLE");
+			if (updateAvailable == "")
+				updateAvailable = MSGID_UPDATEAVAILABLE;
+
+			int thirdButtonCmd = gupParams.get3rdButtonCmd();
+			thirdDoUpdateDlgButtonLabel = gupParams.get3rdButtonLabel();
+
+			int dlAnswer = 0;
+			HWND hApp = ::FindWindowExA(NULL, NULL, gupParams.getClassName().c_str(), NULL);
+			bool isModal = gupParams.isMessageBoxModal();
+
+			if (!thirdButtonCmd)
+				dlAnswer = ::MessageBoxA(isModal ? hApp : NULL, updateAvailable.c_str(), gupParams.getMessageBoxTitle().c_str(), MB_YESNO);
+			else
+				dlAnswer = static_cast<int32_t>(::DialogBox(hInst, MAKEINTRESOURCE(IDD_YESNONEVERDLG), isModal ? hApp : NULL, reinterpret_cast<DLGPROC>(yesNoNeverDlgProc)));
+
+			if (dlAnswer == IDNO)
 			{
-				if (hApp)
-				{
-					::SendMessage(hApp, thirdButtonCmd, gupParams.get3rdButtonWparam(), gupParams.get3rdButtonLparam());
-				}
+				return 0;
 			}
-			return 0;
+
+			if (dlAnswer == IDCANCEL)
+			{
+				if (gupParams.getClassName() != "")
+				{
+					if (hApp)
+					{
+						::SendMessage(hApp, thirdButtonCmd, gupParams.get3rdButtonWparam(), gupParams.get3rdButtonLparam());
+					}
+				}
+				return 0;
+			}
 		}
 
 		//
 		// Download executable bin
 		//
-		::CreateThread(NULL, 0, launchProgressBar, NULL, 0, NULL);
+		if (!isAutoupdate)
+		{
+			::CreateThread(NULL, 0, launchProgressBar, NULL, 0, NULL);
+		}
 		
 		std::string dlDest = std::getenv("TEMP");
 		dlDest += "\\";
@@ -663,10 +684,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpszCmdLine, int)
 		if (dlStopped == "")
 			dlStopped = MSGID_DOWNLOADSTOPPED;
 
-		bool dlSuccessful = downloadBinary(gupDlInfo.getDownloadLocation(), dlDest, pair<string, int>(extraOptions.getProxyServer(), extraOptions.getPort()), isSilentMode, pair<string, string>(dlStopped, gupParams.getMessageBoxTitle()));
+		bool dlSuccessful = downloadBinary(gupDlInfo.getDownloadLocation(), dlDest, pair<string, int>(extraOptions.getProxyServer(), extraOptions.getPort()), isSilentMode, isAutoupdate, pair<string, string>(dlStopped, gupParams.getMessageBoxTitle()));
 
 		if (!dlSuccessful)
-			return -1;
+			return -2;
 
 
 		//

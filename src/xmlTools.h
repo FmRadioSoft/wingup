@@ -51,6 +51,7 @@ public:
 	};
 	bool isSilentMode() const {return _isSilentMode;};
 	bool isMessageBoxModal() const { return _isMessageBoxModal; };
+	bool isAutoupdate() const { return _isAutoupdate; };
 
 private:
 	std::string _currentVersion;
@@ -65,6 +66,7 @@ private:
 	int _3rdButton_lParam = 0;
 	std::string _3rdButton_label;
 	bool _isSilentMode = true;
+	bool _isAutoupdate = false;
 };
 
 class GupExtraOptions : public XMLTool {

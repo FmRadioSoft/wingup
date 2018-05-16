@@ -156,6 +156,25 @@ GupParameters::GupParameters(const char * xmlFileName)
 		}
 	}
 
+	TiXmlNode *autoupdateNode = root->FirstChildElement("Autoupdate");
+	if (autoupdateNode)
+	{
+		TiXmlNode *aun = autoupdateNode->FirstChild();
+		if (aun)
+		{
+			const char *aunVal = aun->Value();
+			if (aunVal && *aunVal)
+			{
+				if (stricmp(aunVal, "yes") == 0)
+					_isAutoupdate = true;
+				else if (stricmp(aunVal, "no") == 0)
+					_isAutoupdate = false;
+				else
+					throw exception("Autoupdate value is incorrect (only \"yes\" or \"no\" is allowed).");
+			}
+		}
+	}
+
 	
 	//
 	// Get optional parameters

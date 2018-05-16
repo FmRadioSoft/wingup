@@ -77,4 +77,10 @@
 	-->
 	<SilentMode>no</SilentMode>
 	
+	<!-- optional. No by default.
+	This parameter can hide all user questions about update. 
+	If "Autoupdate" is set as "yes", then users won't be warned when software updating. 
+	-->
+	<Autoupdate>no</Autoupdate>
+	
 </GUPInput>
